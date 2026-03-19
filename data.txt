@@ -1,0 +1,72 @@
+Prakash Bhattarai
+Email: prakashbhattarai303@gmail.com
+Phone: +91-9612565045
+Roll No: CS21B044
+Location: Pune, India
+
+Education:
+- B.Tech in Computer Science and Engineering
+  National Institute of Technology Arunachal Pradesh
+  CGPA: 7.9
+  Year: 2021 - 2025
+
+- Senior Secondary
+  Kendriya Vidyalaya No.1 Naharlagun
+  Percentage: 73.8%
+  Year: 2021
+
+- Secondary
+  Kendriya Vidyalaya No.1 Naharlagun
+  Percentage: 80.2%
+  Year: 2019
+
+Experience:
+- Joined TCS on August 21, 2025
+- Currently working as System Engineer in AI and Services Transformation Unit
+- Based in Pune, India
+
+Projects:
+
+1. Echo Post (May 2024 - June 2024)
+   Full Stack Social Media Website
+   - Built using MERN stack (MongoDB, Express.js, React.js, Node.js)
+   - Users can like, comment, and share posts
+   - Implemented JWT-based authentication
+   - Dynamic user profiles with editable info
+   - Mobile responsive design
+   - Profile picture upload feature
+
+2. Ecommerce Website (April 2024 - May 2024)
+   Full Stack Ecommerce Platform
+   - Product add/edit/delete functionality
+   - Product categorization, filtering, and search
+   - Dynamic shopping cart
+   - Integrated Stripe payment gateway
+   - Admin panel for order management
+
+Technical Skills:
+- Programming Languages: C, C++, JavaScript
+- Frameworks/Libraries: React.js, Express.js
+- Tools: Git, Linux
+- Databases: MongoDB, MySQL
+
+Certifications:
+- Problem Solving (Intermediate) – HackerRank (June 15, 2023)
+- JavaScript (Basic) – HackerRank (July 6, 2024)
+- CSS (Basic) – HackerRank (July 6, 2024)
+
+Achievements:
+- Secured Rank 365 in Coding Ninjas Coding World Cup (2023)
+- Achieved LeetCode rating of 1698 (2024)
+
+Links:
+- Portfolio: https://prakash-dev.vercel.app
+- GitHub: https://github.com/prakashcs44
+- LinkedIn: https://linkedin.com/in/prakash-bhattarai-1624b7247
+- Echo Post: https://echo-post.vercel.app
+- Ecommerce: https://ecommerce-website-prakashcs44.vercel.app/
+- Leetcode: https://leetcode.com/u/prakash67/
+- HackerRank Certificates:
+  https://www.hackerrank.com/certificates/9925d110d093
+  https://www.hackerrank.com/certificates/73bee83c3c4a
+  https://www.hackerrank.com/certificates/be330a351a1f

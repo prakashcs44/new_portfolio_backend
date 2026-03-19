@@ -1,0 +1,26 @@
+# LangChain Core
+langchain
+langchain-core
+
+# Hugging Face Integration
+langchain-huggingface
+transformers
+huggingface-hub
+
+# Environment Variable Management
+python-dotenv
+
+# Machine Learning Utilities
+numpy
+scikit-learn
+
+fastapi 
+uvicorn
+torch 
+torchvision 
+torchaudio
+langchain-google-genai 
+google-generativeai
+chromadb
+sentence-transformers
+langchain-community
