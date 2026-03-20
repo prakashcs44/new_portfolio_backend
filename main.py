@@ -87,6 +87,12 @@ def home():
     return {"message": "API is running 🚀"}
 
 # -------- CHAT (RAG) --------
+
+@app.get("/warmup")
+async def warmup():
+    get_retriever()  # initializes the RAG pipeline
+    return {"status": "warm"}
+
 @app.post("/chat")
 async def chat(req: ChatRequest):
     try:
