@@ -9,8 +9,8 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import SystemMessage, HumanMessage
 
 # RAG components
-from langchain_community.vectorstores import Chroma
-from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_community.vectorstores import FAISS
+from langchain_community.embeddings import FastEmbedEmbeddings
 from langchain_community.document_loaders import TextLoader
 from langchain_text_splitters import CharacterTextSplitter
 
@@ -27,7 +27,7 @@ app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://prakash.dev.vercel.app"],
+    allow_origins=["https://prakash.dev.vercel.app","http://127.0.0.1:5173","http://localhost:5173"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -49,9 +49,7 @@ def get_retriever():
     if retriever is None:
         print("⚡ Initializing RAG...")
 
-        embedding = HuggingFaceEmbeddings(
-            model_name="all-MiniLM-L6-v2"
-        )
+        embedding = FastEmbedEmbeddings(model_name="BAAI/bge-small-en-v1.5")
 
         loader = TextLoader("data.txt")
         documents = loader.load()
@@ -62,14 +60,7 @@ def get_retriever():
         )
         docs = text_splitter.split_documents(documents)
 
-        vectorstore = Chroma.from_documents(
-            docs,
-            embedding,
-            persist_directory="./chroma_db"
-        )
-
-        vectorstore.persist()
-
+        vectorstore = FAISS.from_documents(docs, embedding)
         retriever = vectorstore.as_retriever(search_kwargs={"k": 3})
 
     return retriever
