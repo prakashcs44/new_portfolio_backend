@@ -1,5 +1,5 @@
 import os
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from dotenv import load_dotenv
 from fastapi.middleware.cors import CORSMiddleware
@@ -14,53 +14,13 @@ from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_community.document_loaders import TextLoader
 from langchain_text_splitters import CharacterTextSplitter
 
+# Email
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+
 # ------------------ LOAD ENV ------------------
 load_dotenv()
-
-# ------------------ GEMINI MODEL ------------------
-model = ChatGoogleGenerativeAI(
-    model="gemini-2.5-flash",
-    google_api_key=os.getenv("GEMINI_API_KEY"),
-    temperature=0.3
-)
-
-# ------------------ RAG SETUP ------------------
-
-# Embedding model (FREE)
-embedding = HuggingFaceEmbeddings(
-    model_name="all-MiniLM-L6-v2"
-)
-
-# Load your data
-loader = TextLoader("data.txt")
-documents = loader.load()
-
-# Split into chunks
-text_splitter = CharacterTextSplitter(
-    chunk_size=500,
-    chunk_overlap=50
-)
-docs = text_splitter.split_documents(documents)
-
-# Create / load vector DB
-vectorstore = Chroma.from_documents(
-    docs,
-    embedding,
-    persist_directory="./chroma_db"
-)
-
-# Persist DB (so it doesn't rebuild every time)
-vectorstore.persist()
-
-# Retriever
-retriever = vectorstore.as_retriever(search_kwargs={"k": 3})
-
-# ------------------ CONTEXT ------------------
-portfolio_context = """
-You are a chatbot for Prakash Bhattarai's portfolio website.
-Only answer questions about Prakash.
-If the question is unrelated, say you don't know.
-"""
 
 # ------------------ FASTAPI ------------------
 app = FastAPI()
@@ -73,55 +33,102 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# ------------------ GEMINI MODEL ------------------
+model = ChatGoogleGenerativeAI(
+    model="gemini-2.5-flash",
+    google_api_key=os.getenv("GEMINI_API_KEY"),
+    temperature=0.3
+)
+
+# ------------------ RAG (LAZY INIT) ------------------
+retriever = None
+
+def get_retriever():
+    global retriever
+
+    if retriever is None:
+        print("⚡ Initializing RAG...")
+
+        embedding = HuggingFaceEmbeddings(
+            model_name="all-MiniLM-L6-v2"
+        )
+
+        loader = TextLoader("data.txt")
+        documents = loader.load()
+
+        text_splitter = CharacterTextSplitter(
+            chunk_size=500,
+            chunk_overlap=50
+        )
+        docs = text_splitter.split_documents(documents)
+
+        vectorstore = Chroma.from_documents(
+            docs,
+            embedding,
+            persist_directory="./chroma_db"
+        )
+
+        vectorstore.persist()
+
+        retriever = vectorstore.as_retriever(search_kwargs={"k": 3})
+
+    return retriever
+
+# ------------------ CONTEXT ------------------
+portfolio_context = """
+You are a chatbot for Prakash Bhattarai's portfolio website.
+Only answer questions about Prakash.
+If the question is unrelated, say you don't know.
+"""
+
+# ------------------ REQUEST MODELS ------------------
 class ChatRequest(BaseModel):
     message: str
-    
 
+class ContactRequest(BaseModel):
+    name: str
+    email: str
+    message: str
+
+# ------------------ ROUTES ------------------
 @app.get("/")
 def home():
-    return {"message": "API is running"}
+    return {"message": "API is running 🚀"}
 
+# -------- CHAT (RAG) --------
 @app.post("/chat")
 async def chat(req: ChatRequest):
-    # 1. Retrieve relevant docs
-    relevant_docs = retriever.invoke(req.message)
+    try:
+        retriever_instance = get_retriever()
 
-    context = "\n\n".join([doc.page_content for doc in relevant_docs])
+        # Retrieve docs
+        relevant_docs = retriever_instance.invoke(req.message)
+        context = "\n\n".join([doc.page_content for doc in relevant_docs])
 
-    # 2. Create prompt
-    messages = [
-        SystemMessage(content=portfolio_context),
-        HumanMessage(content=f"""
+        # Prompt
+        messages = [
+            SystemMessage(content=portfolio_context),
+            HumanMessage(content=f"""
 Context:
 {context}
 
 Question:
 {req.message}
 """)
-    ]
+        ]
 
-    # 3. Generate response
-    result = model.invoke(messages)
+        result = model.invoke(messages)
 
-    return {
-        "reply": result.content,
-        "context_used": context  # optional (good for debugging/interviews)
-    }
+        return {
+            "reply": result.content,
+            "context_used": context
+        }
 
-import os
-import smtplib
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
-from pydantic import BaseModel
-from fastapi import HTTPException
+    except Exception as e:
+        print("Chat Error:", e)
+        raise HTTPException(status_code=500, detail="Chat failed")
 
-# ------------------ REQUEST MODEL ------------------
-class ContactRequest(BaseModel):
-    name: str
-    email: str
-    message: str
-
-# ------------------ EMAIL ROUTE ------------------
+# -------- EMAIL --------
 @app.post("/contact")
 async def send_email(req: ContactRequest):
     try:
@@ -131,20 +138,15 @@ async def send_email(req: ContactRequest):
         if not sender_email or not sender_password:
             raise HTTPException(status_code=500, detail="Email credentials not set")
 
-        # Basic validation
         if not req.name.strip() or not req.email.strip() or not req.message.strip():
             raise HTTPException(status_code=400, detail="All fields are required")
 
-        # Create email
         msg = MIMEMultipart()
         msg["From"] = sender_email
-        msg["To"] = sender_email  # you receive it
+        msg["To"] = sender_email
         msg["Subject"] = f"🚀 New Portfolio Message from {req.name}"
-
-        # 🔥 IMPORTANT (so you can reply directly to user)
         msg["Reply-To"] = req.email
 
-        # HTML body
         body = f"""
         <h2>New Contact Request</h2>
         <p><strong>Name:</strong> {req.name}</p>
@@ -155,16 +157,12 @@ async def send_email(req: ContactRequest):
 
         msg.attach(MIMEText(body, "html"))
 
-        # Send email using Gmail SMTP
         with smtplib.SMTP("smtp.gmail.com", 587) as server:
             server.starttls()
             server.login(sender_email, sender_password)
             server.send_message(msg)
 
-        return {
-            "status": "success",
-            "message": "Email sent successfully"
-        }
+        return {"status": "success", "message": "Email sent successfully"}
 
     except HTTPException as e:
         raise e
