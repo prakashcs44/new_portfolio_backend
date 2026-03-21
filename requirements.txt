@@ -19,4 +19,5 @@ google-generativeai
 langchain-community
 fastembed
 faiss-cpu
+resend
 
