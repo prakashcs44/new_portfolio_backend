@@ -15,9 +15,7 @@ from langchain_community.document_loaders import TextLoader
 from langchain_text_splitters import CharacterTextSplitter
 
 # Email
-import smtplib
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
+import resend
 
 # ------------------ LOAD ENV ------------------
 load_dotenv()
@@ -27,7 +25,7 @@ app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://prakash-dev.vercel.app","http://127.0.0.1:5173","http://localhost:5173"],
+    allow_origins=["https://prakash-dev.vercel.app", "http://127.0.0.1:5173", "http://localhost:5173"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -86,13 +84,13 @@ class ContactRequest(BaseModel):
 def home():
     return {"message": "API is running 🚀"}
 
-# -------- CHAT (RAG) --------
-
+# -------- WARMUP --------
 @app.get("/warmup")
 async def warmup():
-    get_retriever()  # initializes the RAG pipeline
+    get_retriever()
     return {"status": "warm"}
 
+# -------- CHAT (RAG) --------
 @app.post("/chat")
 async def chat(req: ChatRequest):
     try:
@@ -125,39 +123,31 @@ Question:
         print("Chat Error:", e)
         raise HTTPException(status_code=500, detail="Chat failed")
 
-# -------- EMAIL --------
+# -------- EMAIL (RESEND) --------
 @app.post("/contact")
 async def send_email(req: ContactRequest):
     try:
-        sender_email = os.getenv("EMAIL_USER")
-        sender_password = os.getenv("EMAIL_PASS")
-
-        if not sender_email or not sender_password:
-            raise HTTPException(status_code=500, detail="Email credentials not set")
-
         if not req.name.strip() or not req.email.strip() or not req.message.strip():
             raise HTTPException(status_code=400, detail="All fields are required")
 
-        msg = MIMEMultipart()
-        msg["From"] = sender_email
-        msg["To"] = sender_email
-        msg["Subject"] = f"🚀 New Portfolio Message from {req.name}"
-        msg["Reply-To"] = req.email
+        resend.api_key = os.getenv("RESEND_API_KEY")
+        your_email = os.getenv("YOUR_EMAIL")
 
-        body = f"""
-        <h2>New Contact Request</h2>
-        <p><strong>Name:</strong> {req.name}</p>
-        <p><strong>Email:</strong> {req.email}</p>
-        <p><strong>Message:</strong></p>
-        <p>{req.message}</p>
-        """
+        params: resend.Emails.SendParams = {
+            "from": "Portfolio Contact <onboarding@resend.dev>",  # change to your domain once verified
+            "to": [your_email],
+            "reply_to": req.email,
+            "subject": f"🚀 New Portfolio Message from {req.name}",
+            "html": f"""
+                <h2>New Contact Request</h2>
+                <p><strong>Name:</strong> {req.name}</p>
+                <p><strong>Email:</strong> {req.email}</p>
+                <p><strong>Message:</strong></p>
+                <p>{req.message}</p>
+            """,
+        }
 
-        msg.attach(MIMEText(body, "html"))
-
-        with smtplib.SMTP("smtp.gmail.com", 587) as server:
-            server.starttls()
-            server.login(sender_email, sender_password)
-            server.send_message(msg)
+        resend.Emails.send(params)
 
         return {"status": "success", "message": "Email sent successfully"}
 
