@@ -4,20 +4,16 @@ from pydantic import BaseModel
 from dotenv import load_dotenv
 from fastapi.middleware.cors import CORSMiddleware
 
-# LangChain + Gemini
-from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain_core.messages import SystemMessage, HumanMessage
-
-# RAG components
+from langchain_groq import ChatGroq
+from langchain_core.messages import SystemMessage, HumanMessage, ToolMessage
+from langchain_core.tools import tool
 from langchain_community.vectorstores import FAISS
 from langchain_community.embeddings import FastEmbedEmbeddings
 from langchain_community.document_loaders import TextLoader
 from langchain_text_splitters import CharacterTextSplitter
 
-# Email
 import resend
 
-# ------------------ LOAD ENV ------------------
 load_dotenv()
 
 # ------------------ FASTAPI ------------------
@@ -32,35 +28,56 @@ app.add_middleware(
 )
 
 # ------------------ GEMINI MODEL ------------------
-model = ChatGoogleGenerativeAI(
-    model="gemini-2.5-flash",
-    google_api_key=os.getenv("GEMINI_API_KEY"),
+model = ChatGroq(
+    model="llama-3.3-70b-versatile",
+    groq_api_key=os.getenv("GROQ_API_KEY"),
     temperature=0.3
 )
+
+# ------------------ TOOL ------------------
+@tool
+def send_email(name: str, email: str, message: str) -> str:
+    """
+    Send an email/contact message to Prakash.
+    Use this when the user wants to get in touch or contact Prakash.
+    Extract name, email, and message from the conversation.
+    Ask the user for any missing fields before calling this tool.
+    """
+    if not all([name.strip(), email.strip(), message.strip()]):
+        return "Error: name, email, and message are all required."
+
+    resend.api_key = os.getenv("RESEND_API_KEY")
+    your_email = os.getenv("YOUR_EMAIL")
+
+    params: resend.Emails.SendParams = {
+        "from": "Portfolio Contact <onboarding@resend.dev>",
+        "to": [your_email],
+        "reply_to": email,
+        "subject": f"🚀 New Portfolio Message from {name}",
+        "html": f"""
+            <h2>New Contact Request</h2>
+            <p><strong>Name:</strong> {name}</p>
+            <p><strong>Email:</strong> {email}</p>
+            <p><strong>Message:</strong></p>
+            <p>{message}</p>
+        """,
+    }
+    resend.Emails.send(params)
+    return f"Email sent successfully from {name} ({email})."
+
+model_with_tools = model.bind_tools([send_email])
 
 # ------------------ RAG (LAZY INIT) ------------------
 retriever = None
 
 def get_retriever():
     global retriever
-
     if retriever is None:
         print("⚡ Initializing RAG...")
-
         embedding = FastEmbedEmbeddings(model_name="BAAI/bge-small-en-v1.5")
-
         loader = TextLoader("data.txt")
-        documents = loader.load()
-
-        text_splitter = CharacterTextSplitter(
-            chunk_size=500,
-            chunk_overlap=50
-        )
-        docs = text_splitter.split_documents(documents)
-
-        vectorstore = FAISS.from_documents(docs, embedding)
-        retriever = vectorstore.as_retriever(search_kwargs={"k": 3})
-
+        docs = CharacterTextSplitter(chunk_size=500, chunk_overlap=50).split_documents(loader.load())
+        retriever = FAISS.from_documents(docs, embedding).as_retriever(search_kwargs={"k": 3})
     return retriever
 
 # ------------------ CONTEXT ------------------
@@ -68,6 +85,9 @@ portfolio_context = """
 You are a chatbot for Prakash Bhattarai's portfolio website.
 Only answer questions about Prakash.
 If the question is unrelated, say you don't know.
+You have access to a send_email tool. Use it when the user clearly
+wants to contact or send a message to Prakash. If any of name, email,
+or message are missing, ask the user for them before calling the tool.
 """
 
 # ------------------ REQUEST MODELS ------------------
@@ -84,76 +104,67 @@ class ContactRequest(BaseModel):
 def home():
     return {"message": "API is running 🚀"}
 
-# -------- WARMUP --------
 @app.get("/warmup")
 async def warmup():
     get_retriever()
     return {"status": "warm"}
 
-# -------- CHAT (RAG) --------
+# -------- CHAT (RAG + Tool Calling) --------
 @app.post("/chat")
 async def chat(req: ChatRequest):
     try:
         retriever_instance = get_retriever()
-
-        # Retrieve docs
         relevant_docs = retriever_instance.invoke(req.message)
         context = "\n\n".join([doc.page_content for doc in relevant_docs])
 
-        # Prompt
         messages = [
             SystemMessage(content=portfolio_context),
-            HumanMessage(content=f"""
-Context:
-{context}
-
-Question:
-{req.message}
-""")
+            HumanMessage(content=f"Context:\n{context}\n\nQuestion:\n{req.message}"),
         ]
 
-        result = model.invoke(messages)
+        response = model_with_tools.invoke(messages)
+        tool_calls = getattr(response, "tool_calls", [])
 
-        return {
-            "reply": result.content,
-            "context_used": context
-        }
+        if tool_calls:
+            tool_call = tool_calls[0]
+            tool_id = tool_call["id"]
+
+            tool_result = send_email.invoke(tool_call["args"])
+
+            messages.append(response)
+            messages.append(ToolMessage(content=tool_result, tool_call_id=tool_id))
+
+            final_response = model_with_tools.invoke(messages)
+            reply = final_response.content
+        else:
+            reply = response.content
+
+        return {"reply": reply, "context_used": context}
 
     except Exception as e:
         print("Chat Error:", e)
         raise HTTPException(status_code=500, detail="Chat failed")
 
-# -------- EMAIL (RESEND) --------
+# -------- CONTACT (direct API use) --------
 @app.post("/contact")
-async def send_email(req: ContactRequest):
+async def contact(req: ContactRequest):
     try:
         if not req.name.strip() or not req.email.strip() or not req.message.strip():
             raise HTTPException(status_code=400, detail="All fields are required")
 
-        resend.api_key = os.getenv("RESEND_API_KEY")
-        your_email = os.getenv("YOUR_EMAIL")
+        result = send_email.invoke({
+            "name": req.name,
+            "email": req.email,
+            "message": req.message
+        })
 
-        params: resend.Emails.SendParams = {
-            "from": "Portfolio Contact <onboarding@resend.dev>",  # change to your domain once verified
-            "to": [your_email],
-            "reply_to": req.email,
-            "subject": f"🚀 New Portfolio Message from {req.name}",
-            "html": f"""
-                <h2>New Contact Request</h2>
-                <p><strong>Name:</strong> {req.name}</p>
-                <p><strong>Email:</strong> {req.email}</p>
-                <p><strong>Message:</strong></p>
-                <p>{req.message}</p>
-            """,
-        }
+        if result.startswith("Error"):
+            raise HTTPException(status_code=400, detail=result)
 
-        resend.Emails.send(params)
+        return {"status": "success", "message": result}
 
-        return {"status": "success", "message": "Email sent successfully"}
-
-    except HTTPException as e:
-        raise e
-
+    except HTTPException:
+        raise
     except Exception as e:
         print("Email Error:", e)
         raise HTTPException(status_code=500, detail="Failed to send email")

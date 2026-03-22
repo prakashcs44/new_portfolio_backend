@@ -14,10 +14,8 @@ scikit-learn
 
 fastapi 
 uvicorn
-langchain-google-genai 
-google-generativeai
 langchain-community
 fastembed
 faiss-cpu
 resend
-
+langchain-groq
